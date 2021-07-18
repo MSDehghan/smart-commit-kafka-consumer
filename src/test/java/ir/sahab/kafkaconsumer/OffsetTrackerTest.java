@@ -128,6 +128,31 @@ public class OffsetTrackerTest {
     }
 
     @Test
+    public void testPageGap() {
+        final int pageSize = 3;
+        final int maxOpenPagesPerPartition = 4;
+        final OffsetTracker offsetTracker = new OffsetTracker(pageSize, maxOpenPagesPerPartition, new MetricRegistry());
+        final int partition = 0;
+
+        // Track calls which opens the first page: [0..2]
+        offsetTracker.track(partition, 1);
+
+        // Track calls which opens the second page: [9..11] and makes a gap for the first page
+        // Offset 1 completes the first page because the next offsets are inside the recognized gap.
+        offsetTracker.track(partition, 9);
+        Assert.assertFalse(offsetTracker.ack(partition, 9).isPresent());
+
+
+        OptionalLong offsetToCommit;
+        offsetToCommit = offsetTracker.ack(partition, 1);
+        Assert.assertTrue(offsetToCommit.isPresent());
+        Assert.assertEquals(9, offsetToCommit.getAsLong());
+
+        offsetToCommit = offsetTracker.ack(partition, 3);
+        Assert.assertFalse(offsetToCommit.isPresent());
+    }
+
+    @Test
     public void testPageWithMiddleGap() {
         final int pageSize = 3;
         final int maxOpenPagesPerPartition = 2;
@@ -268,7 +293,7 @@ public class OffsetTrackerTest {
         IntStream.range(0,4).forEach(i -> offsetTracker.track(partition, i)); // From first session
 
         // These acks make the pages partially completed [0..2].
-        IntStream.range(0,3).forEach(i -> offsetTracker.track(partition, i)); // For first session
+        IntStream.range(0,3).forEach(i -> offsetTracker.ack(partition, i)); // For first session
 
         // We will remove offset tracker to simulate partitions re-balance.
         offsetTracker.remove(partition);
